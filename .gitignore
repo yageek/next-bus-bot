@@ -30,4 +30,7 @@ _testmain.go
 
 # External packages folder
 vendor/
+.env
+gin-bin
+next-bus-bot
 
