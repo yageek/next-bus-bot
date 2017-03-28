@@ -1,14 +1,24 @@
 package main
 
 import (
-	"fmt"
-	"io/ioutil"
+	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 )
 
+type Stop struct {
+	Name string `json:"stopName"`
+	Code string `json:"stopCode"`
+}
+
+type stopRecord struct {
+	Stops []Stop `json:"stops"`
+}
+
 type StopDB struct {
 	NameMatching map[string]string
+	NameList     []string
 }
 
 func NewStopDB() (*StopDB, error) {
@@ -18,12 +28,23 @@ func NewStopDB() (*StopDB, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-
-	value, err := ioutil.ReadAll(resp.Body)
+	var record stopRecord
+	err = json.NewDecoder(resp.Body).Decode(&record)
 	if err != nil {
 		return nil, err
 	}
+	log.Println("Donwloading DATA OK")
 
-	fmt.Println("JSON:", string(value))
-	return &StopDB{}, nil
+	nameMap := make(map[string]string)
+	nameList := make([]string, len(record.Stops))
+
+	for i, stop := range record.Stops {
+		nameMap[stop.Code] = stop.Name
+		nameList[i] = stop.Name
+	}
+	log.Println("Database OK")
+	return &StopDB{
+		NameMatching: nameMap,
+		NameList:     nameList,
+	}, nil
 }
