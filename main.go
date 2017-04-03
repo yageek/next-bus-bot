@@ -1,44 +1,39 @@
 package main
 
 import (
-	"github.com/RecastAI/SDK-golang/recast"
+	"github.com/RecastAI/SDK-Golang/recast"
 	"github.com/bmizerany/pat"
 	"github.com/unrolled/render"
 	"github.com/urfave/negroni"
-	"github.com/yageek/recast-go-bot-connector"
 	"log"
+	"net/http"
 	"os"
 )
 
 var (
 	rend     *render.Render
-	conn     *botconn.Connector
-	aiClient *recast.Client
+	conn     *recast.ConnectClient
+	aiClient *recast.RequestClient
 )
 
 func init() {
 	rend = render.New()
-	aiClient = recast.NewClient(os.Getenv("RECAST_TOKEN"), "fr")
-	conf := botconn.ConnConfig{
-		Domain:    botconn.RecastAPIDomain,
-		BotID:     os.Getenv("BOT_ID"),
-		UserSlug:  os.Getenv("USER_SLUG"),
-		UserToken: os.Getenv("USER_TOKEN"),
-	}
-	conn = botconn.New(conf)
+	aiClient = &recast.RequestClient{os.Getenv("RECAST_TOKEN"), "fr"}
 }
 func main() {
 
-	// Check DB
-	_, err := NewStopDB()
-	if err != nil {
-		panic(err)
-	}
+	// // Check DB
+	// _, err := NewStopDB()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	conn = recast.NewConnectClient(os.Getenv("BOT_ID"))
 	// Message routing
-	conn.UseHandler(botconn.MessageHandlerFunc(nextBus))
+	conn.UseHandler(recast.MessageHandlerFunc(nextBus))
 	// Router
 	mux := pat.New()
-	mux.Post("/chatbot", conn)
+	mux.Post("/", conn)
+	mux.Get("/", http.HandlerFunc(testHandler))
 
 	// Mux
 	n := negroni.Classic()
@@ -46,19 +41,28 @@ func main() {
 	n.Run(":" + os.Getenv("PORT"))
 }
 
-func nextBus(w botconn.MessageWriter, m botconn.InputMessage) {
-
-	response, err := aiClient.TextRequest(m.Attachment.Content, nil)
+func testHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("Hello world \n"))
+}
+func nextBus(w recast.MessageWriter, m recast.Message) {
+	log.Println("Message Received")
+	response, err := aiClient.ConverseText(m.Attachment.Content, &recast.ConverseOpts{ConversationToken: m.ConversationId})
 	if err != nil {
 		log.Println("Impossible to contact RecastAPI:", err)
 		return
 	}
-	intent, err := response.Intent()
-	if err != nil {
-		log.Println("Unknown intent:", err)
-	} else if intent.Slug == "next-bus" {
-		log.Println("Searching element")
-	} else if intent.Slug == "greetings" {
-		log.Println("Bonjour")
+
+	var text string
+	if len(response.Replies) > 1 {
+		text = response.Replies[0]
+	} else {
+		text = "?????"
+	}
+	message := recast.Attachment{
+		Content: text,
+		Type:    "text",
+	}
+	if err := w.Reply(message); err != nil {
+		fmt.Println("Error:", err)
 	}
 }
