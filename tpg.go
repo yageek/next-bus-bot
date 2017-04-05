@@ -2,11 +2,24 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
+var (
+	ErrNoNextDepartures = errors.New("No planned departures")
+)
+
+type Departure struct {
+	WaitingTime          int `json:"waitingTimeMillis"`
+	ConectionWaitingTime int `json:"conectionWaitingTime"`
+}
+type departureRecord struct {
+	Departures []Departure `json:"departures"`
+}
 type Stop struct {
 	Name string `json:"stopName"`
 	Code string `json:"stopCode"`
@@ -39,7 +52,7 @@ func NewStopDB() (*StopDB, error) {
 	nameList := make([]string, len(record.Stops))
 
 	for i, stop := range record.Stops {
-		nameMap[stop.Code] = stop.Name
+		nameMap[stop.Name] = stop.Code
 		nameList[i] = stop.Name
 	}
 	log.Println("Database OK")
@@ -47,4 +60,33 @@ func NewStopDB() (*StopDB, error) {
 		NameMatching: nameMap,
 		NameList:     nameList,
 	}, nil
+}
+
+func (s *StopDB) getStopCode(q string) (string, error) {
+	for _, value := range s.NameList {
+		if value == q {
+			return s.NameMatching[value], nil
+		}
+	}
+	return "", errors.New("Name not found")
+}
+func (s *StopDB) GetNextBus(stopCode string) (time.Duration, error) {
+
+	resp, err := http.Get("http://prod.ivtr-od.tpg.ch/v1/GetNextDepartures.json?key=" + os.Getenv("TPG_KEY") + "&stopCode=" + stopCode)
+	if err != nil {
+		return -1, err
+	}
+	defer resp.Body.Close()
+	var record departureRecord
+	err = json.NewDecoder(resp.Body).Decode(&record)
+	if err != nil {
+		return -1, err
+	}
+
+	if len(record.Departures) < 1 {
+		return -1, ErrNoNextDepartures
+	}
+
+	waitingTime := time.Duration(record.Departures[0].WaitingTime) * time.Millisecond
+	return waitingTime, nil
 }
